@@ -1,60 +1,48 @@
-use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+
+use tokio::io;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 
+mod event;
+mod event_processor;
+mod socket_handler;
+mod user;
+
+// TODO: proper logging
+
 #[tokio::main]
 async fn main() -> io::Result<()> {
+    // we need to get these params from a config
     let listener = TcpListener::bind("127.0.0.1:6142").await?;
+    let (pubsub_bus_tx, pubsub_bus_rx) = mpsc::channel(1024);
+    let user_map = Arc::new(Mutex::new(HashMap::new()));
 
-    // we need to get this number from a config
-    let (pubsub_tx, mut pubsub_rx) = mpsc::channel(1024);
-
-    // rewrite as process_messages or something
+    let event_processor_user_map = user_map.clone();
     tokio::spawn(async move {
-        while let Some(message) = pubsub_rx.recv().await {
-            // channel is str but it should be our event struct
-            println!("GOT = {}", message);
-            // obviously we will need a db of users to select from here.
-            // we should maintain a hashmap that must not be used from the connector tasks.
-        }
+        event_processor::process_events(pubsub_bus_rx, event_processor_user_map).await;
     });
 
     loop {
-        let (mut socket, _) = listener.accept().await?;
-        let pubsub_tx = pubsub_tx.clone();
+        let (socket, socket_addr) = listener.accept().await?;
+        let pubsub_bus_tx = pubsub_bus_tx.clone();
+        let (pubsub_client_tx, pubsub_client_rx) = mpsc::channel(1024);
 
-        // rewrite as socket_handler or something
+        let socket_handler_user_map = user_map.clone();
         tokio::spawn(async move {
-            let mut buf = vec![0; 1024];
-
-            loop {
-                match socket.read(&mut buf).await {
-                    // Return value of `Ok(0)` signifies that the remote has
-                    // closed
-                    Ok(0) => return,
-                    Ok(n) => {
-                        // Copy the data back to socket
-                        if socket.write_all(&buf[..n]).await.is_err() {
-                            // Unexpected socket error. There isn't much we can
-                            // do here so just stop processing.
-                            return;
-                        }
-                        if pubsub_tx
-                            .send(format!("Hello there, socket said something: {:?}", &buf))
-                            .await
-                            .is_err()
-                        {
-                            // Well, let's die.
-                            return;
-                        }
-                    }
-                    Err(_) => {
-                        // Unexpected socket error. There isn't much we can do
-                        // here so just stop processing.
-                        return;
-                    }
-                }
-            }
+            let (socket_rcv, socket_snd) = socket.into_split();
+            socket_handler::socket_event_receiver(
+                socket_addr.to_string(),
+                socket_rcv,
+                pubsub_bus_tx,
+                pubsub_client_tx,
+                socket_handler_user_map,
+            )
+            .await;
+            tokio::spawn(async move {
+                socket_handler::socket_event_sender(socket_snd, pubsub_client_rx).await;
+            });
         });
     }
 }
