@@ -20,15 +20,22 @@ pub async fn process_events(mut rx: Receiver<Event>, user_map: Arc<Mutex<HashMap
                 Some(user) => {
                     user_tx = Some(user.tx.clone());
                 }
-                None => {}
+                None => {
+                    println!("No user");
+                }
             }
         }
         match user_tx {
             Some(user_tx) => match user_tx.send(event).await {
-                Ok(_) => {}
-                Err(_) => {}
+                Ok(_) => {
+                    println!("event sent to user successfully");
+                }
+                Err(e) => {
+                    println!("some error while sending event to user: {}", e);
+                }
             },
             None => {
+                println!("user_tx is none");
                 continue;
             }
         }

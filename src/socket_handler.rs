@@ -8,7 +8,6 @@ use crate::event::{EVENT_ID_LEN, Event};
 use crate::user::{USER_ID_LEN, User};
 
 pub async fn socket_event_receiver<R>(
-    socket_addr: String,
     mut socket_reader: R,
     pubsub_tx: Sender<Event>,
     pubsub_client_tx: Sender<Event>,
@@ -23,12 +22,15 @@ pub async fn socket_event_receiver<R>(
             // Return value of `Ok(0)` signifies that the remote has closed
             Ok(0) => return,
             Ok(n) => {
+                if EVENT_ID_LEN > n {
+                    continue;
+                }
                 let mut event_id = vec![];
                 event_id.extend_from_slice(&buf[..EVENT_ID_LEN]);
                 let event_id =
                     String::from_utf8(event_id).unwrap_or(String::from("invalid_event_id"));
                 let mut user_id = vec![];
-                user_id.extend_from_slice(&buf[EVENT_ID_LEN..USER_ID_LEN]);
+                user_id.extend_from_slice(&buf[EVENT_ID_LEN..EVENT_ID_LEN + USER_ID_LEN]);
                 let user_id = String::from_utf8(user_id)
                     .unwrap_or(String::from("{\"error\": \"parse_content\"}"));
                 let mut event_content = vec![];
@@ -36,12 +38,12 @@ pub async fn socket_event_receiver<R>(
                 let event_content = String::from_utf8(event_content)
                     .unwrap_or(String::from("{\"error\": \"parse_content\"}"));
                 user_map.lock().unwrap().insert(
-                    // this should be from the event and we should check if it exists already
-                    user_id,
+                    // we should check if it exists already
+                    user_id.clone(),
                     User::new(None, pubsub_client_tx.clone()),
                 );
                 if pubsub_tx
-                    .send(Event::new(socket_addr.clone(), event_id, event_content))
+                    .send(Event::new(user_id, event_id, event_content))
                     .await
                     .is_err()
                 {

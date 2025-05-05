@@ -4,10 +4,12 @@ use crate::event::Event;
 
 pub const USER_ID_LEN: usize = 16;
 
+#[derive(Debug)]
 pub struct Filter {
     expr: String,
 }
 
+#[derive(Debug)]
 pub struct User {
     pub filter: Option<Filter>,
     pub tx: Sender<Event>,
