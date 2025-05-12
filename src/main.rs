@@ -6,8 +6,10 @@ use tokio::io;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 
+mod amqp;
 mod event;
 mod event_processor;
+mod panel;
 mod socket_handler;
 mod user;
 
@@ -20,7 +22,8 @@ async fn main() -> io::Result<()> {
         // `GET /` goes to `root`
         .route("/", get(root));
 
-    // run our app with hyper, listening globally on port 3000
+    // run our app, listening globally on port 3000
+    // TODO: get from config
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
     tokio::spawn(async move {
         axum::serve(listener, app).await.unwrap();
