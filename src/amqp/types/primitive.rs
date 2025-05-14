@@ -1,6 +1,6 @@
 use super::constructor::Constructor;
 
-pub enum Primitive<'a> {
+pub enum Primitive {
     // Fixed width
     Null,
     Boolean(bool),
@@ -22,21 +22,21 @@ pub enum Primitive<'a> {
     UUID([u8; 16]),
 
     // Variable width
-    OneByteBinary(u8, &'a [u8]),
-    FourByteBinary(u32, &'a [u8]),
-    OneByteString(u8, &'a [u8]),
-    FourByteString(u32, &'a [u8]),
-    OneByteSymbol(u8, &'a [u8]),
-    FourByteSymbol(u32, &'a [u8]),
+    OneByteBinary(u8, Vec<u8>),
+    FourByteBinary(u32, Vec<u8>),
+    OneByteString(u8, Vec<u8>),
+    FourByteString(u32, Vec<u8>),
+    OneByteSymbol(u8, Vec<u8>),
+    FourByteSymbol(u32, Vec<u8>),
 
     // Compound
     EmptyList,
-    OneByteList(u8, u8, &'a [u8]),
-    FourByteList(u32, u32, &'a [u8]),
-    OneByteMap(u8, &'a [u8]),
-    FourByteMap(u32, &'a [u8]),
+    OneByteList(u8, u8, Vec<u8>),
+    FourByteList(u32, u32, Vec<u8>),
+    OneByteMap(u8, Vec<u8>),
+    FourByteMap(u32, Vec<u8>),
 
     // Arrays
-    OneByteArray(u8, u8, Option<Box<Constructor<'a>>>, &'a [u8]),
-    FourByteArray(u32, u32, Option<Box<Constructor<'a>>>, &'a [u8]),
+    OneByteArray(u8, u8, Option<Box<Constructor>>, Vec<u8>),
+    FourByteArray(u32, u32, Option<Box<Constructor>>, Vec<u8>),
 }
