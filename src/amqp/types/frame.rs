@@ -1,7 +1,5 @@
 use std::io::Read;
 
-use super::constructor::Constructor;
-
 pub struct Frame {
     header: [u8; 8],
     extended_header: Vec<u8>,

@@ -37,6 +37,6 @@ pub enum Primitive {
     FourByteMap(u32, Vec<u8>),
 
     // Arrays
-    OneByteArray(u8, u8, Option<Box<Constructor>>, Vec<u8>),
-    FourByteArray(u32, u32, Option<Box<Constructor>>, Vec<u8>),
+    OneByteArray(u8, u8, Box<Constructor>, Vec<u8>),
+    FourByteArray(u32, u32, Box<Constructor>, Vec<u8>),
 }
