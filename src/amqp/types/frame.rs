@@ -1,46 +1,63 @@
-use std::io::Read;
+use tokio::io::AsyncReadExt;
+
+enum FrameType {
+    AMQP = 0x00,
+    SASL = 0x05,
+}
 
 pub struct Frame {
-    header: [u8; 8],
+    size: u32,
+    doff: u8,
+    frame_type: FrameType,
     extended_header: Vec<u8>,
     frame_body: Vec<u8>,
 }
 
 impl Frame {
-    pub fn size(&self) -> u32 {
-        u32::from_be_bytes([
-            self.header[0],
-            self.header[1],
-            self.header[2],
-            self.header[3],
-        ])
-    }
-
-    pub fn doff(&self) -> u8 {
-        self.header[4]
-    }
-
-    pub fn frame_type(&self) -> u8 {
-        self.header[5]
-    }
-
-    pub fn new(buf_reader: &mut impl Read) -> Result<Self, &'static str> {
+    pub async fn new(buf_reader: &mut (impl AsyncReadExt + Unpin)) -> Result<Self, &'static str> {
+        let mut buffer = [0u8; 4];
+        buf_reader
+            .read_exact(&mut buffer)
+            .await
+            .unwrap_or_else(|_| 0);
+        let frame_size = u32::from_be_bytes(buffer);
+        let mut buffer = [0u8; 1];
+        buf_reader
+            .read_exact(&mut buffer)
+            .await
+            .unwrap_or_else(|_| 0);
+        let doff = buffer[0];
+        let mut buffer = [0u8; 1];
+        buf_reader
+            .read_exact(&mut buffer)
+            .await
+            .unwrap_or_else(|_| 0);
+        let frame_type = match buffer[0] {
+            0x00 => FrameType::AMQP,
+            0x05 => FrameType::SASL,
+            _ => return Err("Unexpected frame type"),
+        };
         let mut frame = Frame {
-            header: [0u8; 8],
+            size: frame_size,
+            doff,
+            frame_type,
             extended_header: vec![],
             frame_body: vec![],
         };
-        buf_reader
-            .read_exact(&mut frame.header)
-            .unwrap_or_else(|_| {});
-        let mut buffer = [0u8; 1];
-        let ext_header_size = u32::from(frame.doff() * 4);
-        for _ in 8..ext_header_size {
-            buf_reader.read_exact(&mut buffer).unwrap_or_else(|_| {});
+        for _ in 8..frame.doff * 4 {
+            let mut buffer = [0u8; 1];
+            buf_reader
+                .read_exact(&mut buffer)
+                .await
+                .unwrap_or_else(|_| 0);
             frame.extended_header.push(buffer[0]);
         }
-        for _ in ext_header_size..frame.size() {
-            buf_reader.read_exact(&mut buffer).unwrap_or_else(|_| {});
+        for _ in (frame.doff as u32) * 4..frame.size {
+            let mut buffer = [0u8; 1];
+            buf_reader
+                .read_exact(&mut buffer)
+                .await
+                .unwrap_or_else(|_| 0);
             frame.frame_body.push(buffer[0]);
         }
         Ok(frame)
