@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use axum::{Router, routing::get};
-use tokio::io;
-use tokio::net::TcpListener;
+use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
 
 mod amqp;
@@ -14,6 +15,8 @@ mod socket_handler;
 mod user;
 
 // TODO: proper logging
+
+const READ_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
@@ -41,7 +44,14 @@ async fn main() -> io::Result<()> {
     });
 
     loop {
-        let (socket, _) = listener.accept().await?;
+        let (mut socket, _) = listener.accept().await?;
+        match negotiate_version(&mut socket).await {
+            Ok(version) => println!("negotiation successful: version is {}", version),
+            Err(_) => {
+                println!("negotiation failed");
+                continue;
+            }
+        }
         let pubsub_bus_tx = pubsub_bus_tx.clone();
         let (pubsub_client_tx, pubsub_client_rx) = mpsc::channel(1024);
 
@@ -67,4 +77,25 @@ async fn main() -> io::Result<()> {
 // basic handler that responds with a static string
 async fn root() -> &'static str {
     "Hello, World!"
+}
+
+async fn negotiate_version(socket: &mut TcpStream) -> Result<&'static str, &'static str> {
+    let mut valid_version = true;
+    for ch in b"AMQP\x00\x01\x00\x00" {
+        let buf = socket.read_u8().await.unwrap_or_else(|_| 0);
+        if buf != *ch {
+            valid_version = false;
+        }
+    }
+    for ch in b"AMQP\x00\x01\x00\x00" {
+        match socket.write_u8(*ch).await {
+            Ok(_) => {}
+            Err(_) => return Err("Could not write to socket"),
+        }
+    }
+    if valid_version {
+        Ok("1.0.0")
+    } else {
+        Err("Invalid client protocol version")
+    }
 }
