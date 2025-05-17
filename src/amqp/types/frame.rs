@@ -1,16 +1,17 @@
 use tokio::io::AsyncReadExt;
 
-enum FrameType {
+pub enum FrameType {
     AMQP = 0x00,
     SASL = 0x05,
 }
 
 pub struct Frame {
-    size: u32,
-    doff: u8,
-    frame_type: FrameType,
-    extended_header: Vec<u8>,
-    frame_body: Vec<u8>,
+    pub size: u32,
+    pub doff: u8,
+    pub frame_type: FrameType,
+    pub type_specific: [u8; 2],
+    pub extended_header: Vec<u8>,
+    pub frame_body: Vec<u8>,
 }
 
 impl Frame {
@@ -37,10 +38,16 @@ impl Frame {
             0x05 => FrameType::SASL,
             _ => return Err("Unexpected frame type"),
         };
+        let mut buffer = [0u8; 2];
+        buf_reader
+            .read_exact(&mut buffer)
+            .await
+            .unwrap_or_else(|_| 0);
         let mut frame = Frame {
             size: frame_size,
             doff,
             frame_type,
+            type_specific: buffer,
             extended_header: vec![],
             frame_body: vec![],
         };
