@@ -6,6 +6,7 @@ use tokio::{
 pub mod connection;
 pub mod link;
 pub mod session;
+pub mod performative;
 
 pub async fn negotiate_amqp_version(socket: &mut TcpStream) -> Result<&'static str, &'static str> {
     let mut valid_version = true;
