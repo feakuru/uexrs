@@ -39,3 +39,4 @@ Note: this project is in the beginning phase of development.
 ## Useful links
 
 * [AMQP 1.0 specification](https://www.amqp.org/sites/amqp.org/files/amqp.pdf)
+* [AMQP 1.0 interactive type reference](https://qpid.apache.org/amqp/type-reference.html)
