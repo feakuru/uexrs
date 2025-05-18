@@ -28,7 +28,20 @@ pub enum Performative {
         properties: HashMap<Constructor, Constructor>,
     },
     Attach {
-        field: u16,
+        name: String,
+        handle: u32,
+        role: bool,
+        snd_settle_mode: u8,
+        rcv_settle_mode: u8,
+        source: Constructor,
+        target: Constructor,
+        unsettled: HashMap<Constructor, Constructor>,
+        incomplete_unsettled: bool,
+        initial_delivery_count: u32,
+        max_message_size: u64,
+        offered_capabilities: Vec<Vec<u8>>,
+        desired_capabilities: Vec<Vec<u8>>,
+        properties: HashMap<Constructor, Constructor>,
     },
     Flow {
         field: u16,
@@ -262,131 +275,235 @@ impl Performative {
 
     // <type name="attach" class="composite" source="list" provides="frame">
     // <descriptor name="amqp:attach:list" code="0x00000000:0x00000012"/>
-    // <field name="name" type="string" mandatory="true"/>
-    // <field name="handle" type="handle" mandatory="true"/>
-    // <type name="role" class="restricted" source="boolean">
-    //     <choice name="sender" value="false"/>
-    //     <choice name="receiver" value="true"/>
-    // </type>
-    // <field name="role" type="role" mandatory="true"/>
-    // <type name="sender-settle-mode" class="restricted" source="ubyte">
-    //     <choice name="unsettled" value="0"/>
-    //     <choice name="settled" value="1"/>
-    //     <choice name="mixed" value="2"/>
-    // </type>
-    // <field name="snd-settle-mode" type="sender-settle-mode" default="mixed"/>
-    // <type name="receiver-settle-mode" class="restricted" source="ubyte">
-    //     <choice name="first" value="0"/>
-    //     <choice name="second" value="1"/>
-    // </type>
-    // <field name="rcv-settle-mode" type="receiver-settle-mode" default="first"/>
-    // spec:wildcard[*]: A value of any type is permitted.
-    // <field name="source" type="*" requires="source"/>
-    // <field name="target" type="*" requires="target"/>
-    // <field name="unsettled" type="map"/>
-    // <field name="incomplete-unsettled" type="boolean" default="false"/>
-    // <field name="initial-delivery-count" type="sequence-no"/>
-    // <field name="max-message-size" type="ulong"/>
-    // <field name="offered-capabilities" type="symbol" multiple="true"/>
-    // <field name="desired-capabilities" type="symbol" multiple="true"/>
-    // <field name="properties" type="fields"/>
+    fn attach(fields: Vec<Constructor>) -> Result<Self, &'static str> {
+        let mut field_iter = fields.iter();
+        Ok(Performative::Attach {
+            // <field name="name" type="string" mandatory="true"/>
+            name: match read_string(&mut field_iter, true) {
+                Ok(Some(value)) => value,
+                _ => {
+                    return Err("Could not read name");
+                }
+            },
+            // <field name="handle" type="handle" mandatory="true"/>
+            handle: match read_uint(&mut field_iter, true, None) {
+                Ok(Some(value)) => value,
+                _ => {
+                    return Err("Could not read handle");
+                }
+            },
+            // <type name="role" class="restricted" source="boolean">
+            //     <choice name="sender" value="false"/>
+            //     <choice name="receiver" value="true"/>
+            // </type>
+            // <field name="role" type="role" mandatory="true"/>
+            role: match read_bool(&mut field_iter, true, None) {
+                Ok(Some(value)) => value,
+                _ => {
+                    return Err("Could not read role");
+                }
+            },
+            // <type name="sender-settle-mode" class="restricted" source="ubyte">
+            //     <choice name="unsettled" value="0"/>
+            //     <choice name="settled" value="1"/>
+            //     <choice name="mixed" value="2"/>
+            // </type>
+            // <field name="snd-settle-mode" type="sender-settle-mode" default="mixed"/>
+            snd_settle_mode: match read_ubyte(&mut field_iter, true, Some(2)) {
+                Ok(Some(value)) => value,
+                _ => {
+                    return Err("Could not read snd_settle_mode");
+                }
+            },
+            // <type name="receiver-settle-mode" class="restricted" source="ubyte">
+            //     <choice name="first" value="0"/>
+            //     <choice name="second" value="1"/>
+            // </type>
+            // <field name="rcv-settle-mode" type="receiver-settle-mode" default="first"/>
+            rcv_settle_mode: match read_ubyte(&mut field_iter, true, Some(0)) {
+                Ok(Some(value)) => value,
+                _ => {
+                    return Err("Could not read rcv_settle_mode");
+                }
+            },
+            // spec:wildcard[*]: A value of any type is permitted.
+            // <field name="source" type="*" requires="source"/>
+            source: match field_iter.next() {
+                Some(value) => value.clone(),
+                _ => {
+                    return Err("Could not read source");
+                }
+            },
+            // <field name="target" type="*" requires="target"/>
+            target: match field_iter.next() {
+                Some(value) => value.clone(),
+                _ => {
+                    return Err("Could not read target");
+                }
+            },
+            // <field name="unsettled" type="map"/>
+            unsettled: match read_map(&mut field_iter) {
+                Ok(value) => value,
+                _ => {
+                    return Err("Could not read unsettled");
+                }
+            },
+            // <field name="incomplete-unsettled" type="boolean" default="false"/>
+            incomplete_unsettled: match read_bool(&mut field_iter, true, Some(false)) {
+                Ok(Some(value)) => value,
+                _ => {
+                    return Err("Could not read incomplete_unsettled");
+                }
+            },
+            // <field name="initial-delivery-count" type="sequence-no"/>
+            initial_delivery_count: match read_uint(&mut field_iter, true, None) {
+                Ok(Some(value)) => value,
+                _ => {
+                    return Err("Could not read initial_delivery_count");
+                }
+            },
+            // <field name="max-message-size" type="ulong"/>
+            max_message_size: match read_ulong(&mut field_iter, true, None) {
+                Ok(Some(value)) => value,
+                _ => {
+                    return Err("Could not read role");
+                }
+            },
+            // <field name="offered-capabilities" type="symbol" multiple="true"/>
+            offered_capabilities: match read_symbol_array(&mut field_iter) {
+                Ok(value) => value,
+                Err(_) => {
+                    return Err("Cannot read offered_capabilities");
+                }
+            },
+            // <field name="desired-capabilities" type="symbol" multiple="true"/>
+            desired_capabilities: match read_symbol_array(&mut field_iter) {
+                Ok(value) => value,
+                Err(_) => {
+                    return Err("Cannot read desired_capabilities");
+                }
+            },
+            // <field name="properties" type="fields"/>
+            properties: match read_map(&mut field_iter) {
+                Ok(value) => value,
+                Err(_) => {
+                    return Err("Cannot read properties");
+                }
+            },
+        })
+    }
     // </type>
 
     // <type name="flow" class="composite" source="list" provides="frame">
     // <descriptor name="amqp:flow:list" code="0x00000000:0x00000013"/>
-    // <field name="next-incoming-id" type="transfer-number"/>
-    // <field name="incoming-window" type="uint" mandatory="true"/>
-    // <field name="next-outgoing-id" type="transfer-number" mandatory="true"/>
-    // <field name="outgoing-window" type="uint" mandatory="true"/>
-    // <field name="handle" type="handle"/>
-    // <field name="delivery-count" type="sequence-no"/>
-    // <field name="link-credit" type="uint"/>
-    // <field name="available" type="uint"/>
-    // <field name="drain" type="boolean" default="false"/>
-    // <field name="echo" type="boolean" default="false"/>
-    // <field name="properties" type="fields"/>
+    fn flow(fields: Vec<Constructor>) -> Result<Self, &'static str> {
+        // <field name="next-incoming-id" type="transfer-number"/>
+        // <field name="incoming-window" type="uint" mandatory="true"/>
+        // <field name="next-outgoing-id" type="transfer-number" mandatory="true"/>
+        // <field name="outgoing-window" type="uint" mandatory="true"/>
+        // <field name="handle" type="handle"/>
+        // <field name="delivery-count" type="sequence-no"/>
+        // <field name="link-credit" type="uint"/>
+        // <field name="available" type="uint"/>
+        // <field name="drain" type="boolean" default="false"/>
+        // <field name="echo" type="boolean" default="false"/>
+        // <field name="properties" type="fields"/>
+    }
     // </type>
 
     // <type name="transfer" class="composite" source="list" provides="frame">
     // <descriptor name="amqp:transfer:list" code="0x00000000:0x00000014"/>
-    // <field name="handle" type="handle" mandatory="true"/>
-    // <field name="delivery-id" type="delivery-number"/>
-    // <field name="delivery-tag" type="delivery-tag"/>
-    // <field name="message-format" type="message-format"/>
-    // <field name="settled" type="boolean"/>
-    // <field name="more" type="boolean" default="false"/>
-    // <field name="rcv-settle-mode" type="receiver-settle-mode"/>
-    // <field name="state" type="*" requires="delivery-state"/>
-    // <field name="resume" type="boolean" default="false"/>
-    // <field name="aborted" type="boolean" default="false"/>
-    // <field name="batchable" type="boolean" default="false"/>
+    fn transfer(fields: Vec<Constructor>) -> Result<Self, &'static str> {
+        // <field name="handle" type="handle" mandatory="true"/>
+        // <field name="delivery-id" type="delivery-number"/>
+        // <field name="delivery-tag" type="delivery-tag"/>
+        // <field name="message-format" type="message-format"/>
+        // <field name="settled" type="boolean"/>
+        // <field name="more" type="boolean" default="false"/>
+        // <field name="rcv-settle-mode" type="receiver-settle-mode"/>
+        // <field name="state" type="*" requires="delivery-state"/>
+        // <field name="resume" type="boolean" default="false"/>
+        // <field name="aborted" type="boolean" default="false"/>
+        // <field name="batchable" type="boolean" default="false"/>
+    }
     // </type>
 
     // <type name="disposition" class="composite" source="list" provides="frame">
     // <descriptor name="amqp:disposition:list" code="0x00000000:0x00000015"/>
-    // <field name="role" type="role" mandatory="true"/>
-    // <field name="first" type="delivery-number" mandatory="true"/>
-    // <field name="last" type="delivery-number"/>
-    // <field name="settled" type="boolean" default="false"/>
-    // <field name="state" type="*" requires="delivery-state"/>
-    // <field name="batchable" type="boolean" default="false"/>
+    fn disposition(fields: Vec<Constructor>) -> Result<Self, &'static str> {
+        // <field name="role" type="role" mandatory="true"/>
+        // <field name="first" type="delivery-number" mandatory="true"/>
+        // <field name="last" type="delivery-number"/>
+        // <field name="settled" type="boolean" default="false"/>
+        // <field name="state" type="*" requires="delivery-state"/>
+        // <field name="batchable" type="boolean" default="false"/>
+    }
     // </type>
 
     // <type name="detach" class="composite" source="list" provides="frame">
     // <descriptor name="amqp:detach:list" code="0x00000000:0x00000016"/>
-    // <field name="handle" type="handle" mandatory="true"/>
-    // <field name="closed" type="boolean" default="false"/>
-    // <field name="error" type="error"/>
+    fn detach(fields: Vec<Constructor>) -> Result<Self, &'static str> {
+        // <field name="handle" type="handle" mandatory="true"/>
+        // <field name="closed" type="boolean" default="false"/>
+        // <field name="error" type="error"/>
+    }
     // </type>
 
     // <type name="end" class="composite" source="list" provides="frame">
     // <descriptor name="amqp:end:list" code="0x00000000:0x00000017"/>
-    // <field name="error" type="error"/>
+    fn end(fields: Vec<Constructor>) -> Result<Self, &'static str> {
+        // <field name="error" type="error"/>
+    }
     // </type>
 
     // <type name="close" class="composite" source="list" provides="frame">
     // <descriptor name="amqp:close:list" code="0x00000000:0x00000018"/>
-    // <field name="error" type="error"/>
+    fn close(fields: Vec<Constructor>) -> Result<Self, &'static str> {
+        // <field name="error" type="error"/>
+    }
     // </type>
 }
 
-fn read_string(
+fn read_bool(
     field_iter: &mut Iter<Constructor>,
     mandatory: bool,
-) -> Result<Option<String>, &'static str> {
-    match (*field_iter).next() {
-        Some(Constructor::PrimitiveType(Primitive::String(value))) => Ok(Some(value.clone())),
-        Some(Constructor::PrimitiveType(Primitive::Null)) => {
-            if mandatory {
-                return Err("Non-mandatory string is null");
-            } else {
-                Ok(None)
-            }
-        }
-        _ => {
-            return Err("Invalid type: string expected");
-        }
-    }
-}
-
-fn read_uint(
-    field_iter: &mut Iter<Constructor>,
-    mandatory: bool,
-    default: Option<u32>,
-) -> Result<Option<u32>, &'static str> {
+    default: Option<bool>,
+) -> Result<Option<bool>, &'static str> {
     match field_iter.next() {
-        Some(Constructor::PrimitiveType(Primitive::UInt(value))) => Ok(Some(*value)),
+        Some(Constructor::PrimitiveType(Primitive::Boolean(value))) => Ok(Some(*value)),
         Some(Constructor::PrimitiveType(Primitive::Null)) => {
             if !mandatory {
                 Ok(None)
             } else if default.is_some() {
                 Ok(default)
             } else {
-                return Err("Mandatory uint field is null");
+                return Err("Mandatory ushort field is null");
             }
         }
         _ => {
-            return Err("Invalid field type at max_frame_size");
+            return Err("Invalid field type, expected boolean");
+        }
+    }
+}
+
+fn read_ubyte(
+    field_iter: &mut Iter<Constructor>,
+    mandatory: bool,
+    default: Option<u8>,
+) -> Result<Option<u8>, &'static str> {
+    match field_iter.next() {
+        Some(Constructor::PrimitiveType(Primitive::UByte(value))) => Ok(Some(*value)),
+        Some(Constructor::PrimitiveType(Primitive::Null)) => {
+            if !mandatory {
+                Ok(None)
+            } else if default.is_some() {
+                Ok(default)
+            } else {
+                return Err("Mandatory ubyte field is null");
+            }
+        }
+        _ => {
+            return Err("Invalid field type, expected ubyte");
         }
     }
 }
@@ -408,7 +525,70 @@ fn read_ushort(
             }
         }
         _ => {
-            return Err("Invalid field type at channel_max");
+            return Err("Invalid field type, expected ushort");
+        }
+    }
+}
+
+fn read_uint(
+    field_iter: &mut Iter<Constructor>,
+    mandatory: bool,
+    default: Option<u32>,
+) -> Result<Option<u32>, &'static str> {
+    match field_iter.next() {
+        Some(Constructor::PrimitiveType(Primitive::UInt(value))) => Ok(Some(*value)),
+        Some(Constructor::PrimitiveType(Primitive::Null)) => {
+            if !mandatory {
+                Ok(None)
+            } else if default.is_some() {
+                Ok(default)
+            } else {
+                return Err("Mandatory uint field is null");
+            }
+        }
+        _ => {
+            return Err("Invalid field type, expected uint");
+        }
+    }
+}
+
+fn read_ulong(
+    field_iter: &mut Iter<Constructor>,
+    mandatory: bool,
+    default: Option<u64>,
+) -> Result<Option<u64>, &'static str> {
+    match field_iter.next() {
+        Some(Constructor::PrimitiveType(Primitive::ULong(value))) => Ok(Some(*value)),
+        Some(Constructor::PrimitiveType(Primitive::Null)) => {
+            if !mandatory {
+                Ok(None)
+            } else if default.is_some() {
+                Ok(default)
+            } else {
+                return Err("Mandatory ulong field is null");
+            }
+        }
+        _ => {
+            return Err("Invalid field type, expected ulong");
+        }
+    }
+}
+
+fn read_string(
+    field_iter: &mut Iter<Constructor>,
+    mandatory: bool,
+) -> Result<Option<String>, &'static str> {
+    match (*field_iter).next() {
+        Some(Constructor::PrimitiveType(Primitive::String(value))) => Ok(Some(value.clone())),
+        Some(Constructor::PrimitiveType(Primitive::Null)) => {
+            if mandatory {
+                return Err("Mandatory string is null");
+            } else {
+                Ok(None)
+            }
+        }
+        _ => {
+            return Err("Invalid type: string expected");
         }
     }
 }

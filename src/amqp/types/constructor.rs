@@ -441,6 +441,9 @@ impl Constructor {
                     let mut buf = Vec::<Primitive>::with_capacity(len);
 
                     for _ in 0..len {
+                        // TODO: fix! this will read some primitive bytes
+                        // into the descriptor of the new constructor every
+                        // time!!!
                         match Box::pin(Constructor::new(elt_constructor_code, buf_reader)).await {
                             Ok(
                                 Constructor::PrimitiveType(elt_primitive)
@@ -474,6 +477,9 @@ impl Constructor {
                     let mut buf = Vec::<Primitive>::with_capacity(len);
 
                     for _ in 0..len {
+                        // TODO: fix! this will read some primitive bytes
+                        // into the descriptor of the new constructor every
+                        // time!!!
                         match Box::pin(Constructor::new(elt_constructor_code, buf_reader)).await {
                             Ok(
                                 Constructor::PrimitiveType(elt_primitive)
