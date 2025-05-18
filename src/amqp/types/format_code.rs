@@ -1,3 +1,4 @@
+#[derive(Clone, Copy, Debug)]
 pub enum FormatCode {
     NonPrimitive = 0x00,
     Null = 0x40,           // fixed/0 the null value

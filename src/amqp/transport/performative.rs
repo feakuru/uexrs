@@ -1,3 +1,5 @@
+use std::ops::Deref;
+
 use tokio::io::AsyncReadExt;
 
 use crate::amqp::types::{constructor::Constructor, format_code::FormatCode, primitive::Primitive};
@@ -28,24 +30,11 @@ impl Performative {
                 Err("Constructor for a performative is a primitive type")
             }
             Constructor::DescribedType(descriptor, constructor_primitive) => {
-                let descriptor: Constructor = *descriptor;
+                let descriptor: Constructor = descriptor.deref().clone();
                 match descriptor {
                     Constructor::PrimitiveType(primitive) => match primitive {
-                        Primitive::OneByteString(prim_len, prim_body) => {
-                            Self::decode_one_byte_descriptor(
-                                prim_len,
-                                prim_body,
-                                constructor_primitive,
-                            )
-                            .await
-                        }
-                        Primitive::FourByteString(prim_len, prim_body) => {
-                            Self::decode_four_bytes_descriptor(
-                                prim_len,
-                                prim_body,
-                                constructor_primitive,
-                            )
-                            .await
+                        Primitive::String(prim_body) => {
+                            Self::decode_descriptor(prim_body, constructor_primitive).await
                         }
                         _ => Err("Performative constructor descriptor is not a string"),
                     },
@@ -54,38 +43,6 @@ impl Performative {
                     }
                 }
             }
-        }
-    }
-
-    async fn decode_one_byte_descriptor(
-        descriptor_len: u8,
-        descriptor_body: Vec<u8>,
-        constructor_primitive: Primitive,
-    ) -> Result<Self, &'static str> {
-        if descriptor_len as usize != descriptor_body.len() {
-            return Err("Descriptor body size does not match declared descriptor size");
-        }
-        match String::from_utf8(descriptor_body) {
-            Ok(perf_type_name) => {
-                Self::decode_descriptor(perf_type_name, constructor_primitive).await
-            }
-            Err(_) => Err("Could not convert descriptor body to a string"),
-        }
-    }
-
-    async fn decode_four_bytes_descriptor(
-        descriptor_len: u32,
-        descriptor_body: Vec<u8>,
-        constructor_primitive: Primitive,
-    ) -> Result<Self, &'static str> {
-        if descriptor_len as usize != descriptor_body.len() {
-            return Err("Descriptor body size does not match declared descriptor size");
-        }
-        match String::from_utf8(descriptor_body) {
-            Ok(perf_type_name) => {
-                Self::decode_descriptor(perf_type_name, constructor_primitive).await
-            }
-            Err(_) => Err("Could not convert descriptor body to a string"),
         }
     }
 

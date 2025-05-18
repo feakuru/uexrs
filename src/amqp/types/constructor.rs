@@ -1,11 +1,15 @@
+use std::collections::HashMap;
+use std::pin::Pin;
+
 use tokio::io::AsyncReadExt;
 
 use super::format_code::FormatCode;
-use super::primitive::Primitive;
+use super::primitive::{InnerDouble, InnerFloat, InnerMap, Primitive};
 
+#[derive(PartialEq, Eq, Hash, Debug, Clone)]
 pub enum Constructor {
     PrimitiveType(Primitive),
-    DescribedType(Box<Constructor>, Primitive),
+    DescribedType(Pin<Box<Constructor>>, Primitive),
 }
 
 impl Constructor {
@@ -21,9 +25,7 @@ impl Constructor {
                     .await
                     .unwrap_or_else(|_| 0);
                 let descriptor_code = FormatCode::try_from(u16::from_be_bytes(read_buf))?;
-                let descriptor = Box::pin(Constructor::new(descriptor_code, buf_reader))
-                    .await
-                    .unwrap();
+                let descriptor = Box::pin(Constructor::new(descriptor_code, buf_reader)).await?;
                 buf_reader
                     .read_exact(&mut read_buf)
                     .await
@@ -34,12 +36,11 @@ impl Constructor {
                         Err("Non-primitive used as a described constructor primitive")
                     }
                     _ => {
-                        let primitive = Box::pin(Constructor::new(primitive_code, buf_reader))
-                            .await
-                            .unwrap();
+                        let primitive =
+                            Box::pin(Constructor::new(primitive_code, buf_reader)).await?;
                         match primitive {
                             Constructor::PrimitiveType(primitive) => {
-                                Ok(Self::DescribedType(Box::new(descriptor), primitive))
+                                Ok(Self::DescribedType(Box::pin(descriptor), primitive))
                             }
                             _ => Err("Non-primitive used as a described constructor primitive"),
                         }
@@ -133,12 +134,16 @@ impl Constructor {
                 FormatCode::Float => {
                     let mut buf = [0u8; 4];
                     buf_reader.read_exact(&mut buf).await.unwrap_or_else(|_| 0);
-                    Primitive::Float(f32::from_be_bytes(buf))
+                    Primitive::Float(InnerFloat {
+                        value: f32::from_be_bytes(buf),
+                    })
                 }
                 FormatCode::Double => {
                     let mut buf = [0u8; 8];
                     buf_reader.read_exact(&mut buf).await.unwrap_or_else(|_| 0);
-                    Primitive::Double(f64::from_be_bytes(buf))
+                    Primitive::Double(InnerDouble {
+                        value: f64::from_be_bytes(buf),
+                    })
                 }
                 FormatCode::Decimal32 => {
                     let mut buf = [0u8; 4];
@@ -187,7 +192,7 @@ impl Constructor {
                             .unwrap_or_else(|_| 0);
                         buf.push(read_buf[0]);
                     }
-                    Primitive::OneByteBinary(len, buf)
+                    Primitive::Binary(buf)
                 }
                 FormatCode::FourByteBinary => {
                     let mut read_buf = [0u8; 4];
@@ -206,7 +211,7 @@ impl Constructor {
                             .unwrap_or_else(|_| 0);
                         buf.push(read_buf[0]);
                     }
-                    Primitive::FourByteBinary(len, buf)
+                    Primitive::Binary(buf)
                 }
                 FormatCode::OneByteString => {
                     let mut read_buf = [0u8; 1];
@@ -225,7 +230,12 @@ impl Constructor {
                             .unwrap_or_else(|_| 0);
                         buf.push(read_buf[0]);
                     }
-                    Primitive::OneByteString(len, buf)
+                    match String::from_utf8(buf) {
+                        Ok(value) => Primitive::String(value),
+                        Err(_) => {
+                            return Err("Could not decode 1-byte string (UTF-8 error)");
+                        }
+                    }
                 }
                 FormatCode::FourByteString => {
                     let mut read_buf = [0u8; 4];
@@ -244,7 +254,12 @@ impl Constructor {
                             .unwrap_or_else(|_| 0);
                         buf.push(read_buf[0]);
                     }
-                    Primitive::FourByteString(len, buf)
+                    match String::from_utf8(buf) {
+                        Ok(value) => Primitive::String(value),
+                        Err(_) => {
+                            return Err("Could not decode 4-byte string (UTF-8 error)");
+                        }
+                    }
                 }
                 FormatCode::OneByteSymbol => {
                     let mut read_buf = [0u8; 1];
@@ -263,7 +278,7 @@ impl Constructor {
                             .unwrap_or_else(|_| 0);
                         buf.push(read_buf[0]);
                     }
-                    Primitive::OneByteSymbol(len, buf)
+                    Primitive::Symbol(buf)
                 }
                 FormatCode::FourByteSymbol => {
                     let mut read_buf = [0u8; 4];
@@ -282,7 +297,7 @@ impl Constructor {
                             .unwrap_or_else(|_| 0);
                         buf.push(read_buf[0]);
                     }
-                    Primitive::FourByteSymbol(len, buf)
+                    Primitive::Symbol(buf)
                 }
                 FormatCode::List0 => Primitive::EmptyList,
                 FormatCode::List8 => {
@@ -291,19 +306,25 @@ impl Constructor {
                         .read_exact(&mut read_buf)
                         .await
                         .unwrap_or_else(|_| 0);
-                    let size = read_buf[0];
+                    let _size = read_buf[0];
                     let count = read_buf[1];
-                    let len = (size * count) as usize;
-                    let mut buf = Vec::<u8>::with_capacity(len);
-                    let mut read_buf = [0u8; 1];
+
+                    let len = count as usize;
+                    let mut buf = Vec::with_capacity(len);
                     for _ in 0..len {
+                        let mut read_buf = [0u8; 2];
                         buf_reader
                             .read_exact(&mut read_buf)
                             .await
                             .unwrap_or_else(|_| 0);
-                        buf.push(read_buf[0]);
+                        let elt_fcode = FormatCode::try_from(u16::from_be_bytes(read_buf))?;
+                        let elt = Box::pin(Constructor::new(elt_fcode, buf_reader)).await;
+                        match elt {
+                            Ok(constructor) => buf.push(Box::pin(constructor)),
+                            Err(_) => return Err("Could not read element of 8-byte list"),
+                        }
                     }
-                    Primitive::OneByteList(size, count, buf)
+                    Primitive::List(buf)
                 }
                 FormatCode::List32 => {
                     let mut read_buf = [0u8; 8];
@@ -311,21 +332,26 @@ impl Constructor {
                         .read_exact(&mut read_buf)
                         .await
                         .unwrap_or_else(|_| 0);
-                    let size =
+                    let _size =
                         u32::from_be_bytes([read_buf[0], read_buf[1], read_buf[2], read_buf[3]]);
                     let count =
                         u32::from_be_bytes([read_buf[4], read_buf[5], read_buf[6], read_buf[7]]);
-                    let len = (size * count) as usize;
-                    let mut buf = Vec::<u8>::with_capacity(len);
-                    let mut read_buf = [0u8; 1];
+
+                    let len = count as usize;
+                    let mut buf = Vec::with_capacity(len);
                     for _ in 0..len {
+                        let mut read_buf = [0u8; 2];
                         buf_reader
                             .read_exact(&mut read_buf)
                             .await
                             .unwrap_or_else(|_| 0);
-                        buf.push(read_buf[0]);
+                        let elt_fcode = FormatCode::try_from(u16::from_be_bytes(read_buf))?;
+                        match Box::pin(Constructor::new(elt_fcode, buf_reader)).await {
+                            Ok(constructor) => buf.push(Box::pin(constructor)),
+                            Err(_) => return Err("Could not read element of 32-byte list"),
+                        }
                     }
-                    Primitive::FourByteList(size, count, buf)
+                    Primitive::List(buf)
                 }
                 FormatCode::Map8 => {
                     let mut read_buf = [0u8; 1];
@@ -334,15 +360,34 @@ impl Constructor {
                         .await
                         .unwrap_or_else(|_| 0);
                     let len = read_buf[0];
-                    let mut buf = Vec::<u8>::with_capacity(len as usize);
+                    if len % 2 != 0 {
+                        return Err("Map8 length found to be odd");
+                    }
+                    let mut buf = HashMap::with_capacity(len as usize);
                     for _ in 0..len {
+                        let mut read_buf = [0u8; 2];
                         buf_reader
                             .read_exact(&mut read_buf)
                             .await
                             .unwrap_or_else(|_| 0);
-                        buf.push(read_buf[0]);
+                        let key_fcode = FormatCode::try_from(u16::from_be_bytes(read_buf))?;
+                        let key = match Box::pin(Constructor::new(key_fcode, buf_reader)).await {
+                            Ok(constructor) => constructor,
+                            Err(_) => return Err("Could not read a key of an 8-byte map"),
+                        };
+
+                        buf_reader
+                            .read_exact(&mut read_buf)
+                            .await
+                            .unwrap_or_else(|_| 0);
+                        let val_fcode = FormatCode::try_from(u16::from_be_bytes(read_buf))?;
+                        let val = match Box::pin(Constructor::new(val_fcode, buf_reader)).await {
+                            Ok(constructor) => constructor,
+                            Err(_) => return Err("Could not read a value of an 8-byte map"),
+                        };
+                        buf.insert(Box::pin(key), Box::pin(val));
                     }
-                    Primitive::OneByteMap(len, buf)
+                    Primitive::Map(InnerMap { value: buf })
                 }
                 FormatCode::Map32 => {
                     let mut read_buf = [0u8; 4];
@@ -351,15 +396,31 @@ impl Constructor {
                         .await
                         .unwrap_or_else(|_| 0);
                     let len = u32::from_be_bytes(read_buf);
-                    let mut buf = Vec::<u8>::with_capacity(len as usize);
+                    let mut buf = HashMap::with_capacity(len as usize);
                     for _ in 0..len {
+                        let mut read_buf = [0u8; 2];
                         buf_reader
                             .read_exact(&mut read_buf)
                             .await
                             .unwrap_or_else(|_| 0);
-                        buf.push(read_buf[0]);
+                        let key_fcode = FormatCode::try_from(u16::from_be_bytes(read_buf))?;
+                        let key = match Box::pin(Constructor::new(key_fcode, buf_reader)).await {
+                            Ok(constructor) => constructor,
+                            Err(_) => return Err("Could not read a key of an 32-byte map"),
+                        };
+
+                        buf_reader
+                            .read_exact(&mut read_buf)
+                            .await
+                            .unwrap_or_else(|_| 0);
+                        let val_fcode = FormatCode::try_from(u16::from_be_bytes(read_buf))?;
+                        let val = match Box::pin(Constructor::new(val_fcode, buf_reader)).await {
+                            Ok(constructor) => constructor,
+                            Err(_) => return Err("Could not read a value of an 32-byte map"),
+                        };
+                        buf.insert(Box::pin(key), Box::pin(val));
                     }
-                    Primitive::FourByteMap(len, buf)
+                    Primitive::Map(InnerMap { value: buf })
                 }
                 FormatCode::Array8 => {
                     let mut read_buf = [0u8; 1];
@@ -367,38 +428,32 @@ impl Constructor {
                         .read_exact(&mut read_buf)
                         .await
                         .unwrap_or_else(|_| 0);
-                    let size = read_buf[0];
+                    let _size = read_buf[0];
                     buf_reader
                         .read_exact(&mut read_buf)
                         .await
                         .unwrap_or_else(|_| 0);
                     let count = read_buf[0];
 
-                    let mut read_buf = [0u8; 2];
-                    buf_reader
-                        .read_exact(&mut read_buf)
-                        .await
-                        .unwrap_or_else(|_| 0);
-                    let constructor_code = FormatCode::try_from(u16::from_be_bytes(read_buf))?;
-                    let constructor =
-                        Box::pin(Constructor::new(constructor_code, buf_reader)).await;
-                    match constructor {
-                        Ok(constructor) => {
-                            let len = (size * count) as usize;
-                            let mut buf = Vec::<u8>::with_capacity(len);
+                    let read_buf = [0u8; 2];
+                    let elt_constructor_code = FormatCode::try_from(u16::from_be_bytes(read_buf))?;
+                    let len = count as usize;
+                    let mut buf = Vec::<Primitive>::with_capacity(len);
 
-                            let mut read_buf = [0u8; 1];
-                            for _ in 0..len {
-                                buf_reader
-                                    .read_exact(&mut read_buf)
-                                    .await
-                                    .unwrap_or_else(|_| 0);
-                                buf.push(read_buf[0]);
+                    for _ in 0..len {
+                        match Box::pin(Constructor::new(elt_constructor_code, buf_reader)).await {
+                            Ok(
+                                Constructor::PrimitiveType(elt_primitive)
+                                | Constructor::DescribedType(_, elt_primitive),
+                            ) => {
+                                buf.push(elt_primitive);
                             }
-                            Primitive::OneByteArray(size, count, Box::new(constructor), buf)
+                            Err(_) => {
+                                return Err("Could not read array8 element");
+                            }
                         }
-                        Err(_) => Primitive::Null,
                     }
+                    Primitive::Array(buf)
                 }
                 FormatCode::Array32 => {
                     let mut read_buf = [0u8; 4];
@@ -406,7 +461,7 @@ impl Constructor {
                         .read_exact(&mut read_buf)
                         .await
                         .unwrap_or_else(|_| 0);
-                    let size = u32::from_be_bytes(read_buf);
+                    let _size = u32::from_be_bytes(read_buf);
                     buf_reader
                         .read_exact(&mut read_buf)
                         .await
@@ -414,26 +469,24 @@ impl Constructor {
                     let count = u32::from_be_bytes(read_buf);
 
                     let read_buf = [0u8; 2];
-                    let constructor_code = FormatCode::try_from(u16::from_be_bytes(read_buf))?;
-                    let constructor =
-                        Box::pin(Constructor::new(constructor_code, buf_reader)).await;
-                    match constructor {
-                        Ok(constructor) => {
-                            let len = (size * count) as usize;
-                            let mut buf = Vec::<u8>::with_capacity(len);
+                    let elt_constructor_code = FormatCode::try_from(u16::from_be_bytes(read_buf))?;
+                    let len = count as usize;
+                    let mut buf = Vec::<Primitive>::with_capacity(len);
 
-                            let mut read_buf = [0u8; 1];
-                            for _ in 0..len {
-                                buf_reader
-                                    .read_exact(&mut read_buf)
-                                    .await
-                                    .unwrap_or_else(|_| 0);
-                                buf.push(read_buf[0]);
+                    for _ in 0..len {
+                        match Box::pin(Constructor::new(elt_constructor_code, buf_reader)).await {
+                            Ok(
+                                Constructor::PrimitiveType(elt_primitive)
+                                | Constructor::DescribedType(_, elt_primitive),
+                            ) => {
+                                buf.push(elt_primitive);
                             }
-                            Primitive::FourByteArray(size, count, Box::new(constructor), buf)
+                            Err(_) => {
+                                return Err("Could not read array32 element");
+                            }
                         }
-                        Err(_) => Primitive::Null,
                     }
+                    Primitive::Array(buf)
                 }
             })),
         }
