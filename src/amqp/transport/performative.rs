@@ -567,7 +567,7 @@ fn read_symbol_array(field_iter: &mut Iter<Constructor>) -> Result<Vec<Vec<u8>>,
             let mut result = vec![];
             for elt in value.iter() {
                 match elt {
-                    Primitive::Symbol(symbols) => {
+                    Constructor::PrimitiveType(Primitive::Symbol(symbols)) => {
                         result.push(symbols.clone());
                     }
                     _ => {
