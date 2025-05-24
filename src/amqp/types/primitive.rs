@@ -1,4 +1,4 @@
-use std::{collections::HashMap, hash::Hash, pin::Pin};
+use std::{collections::HashMap, hash::Hash}; 
 
 use super::constructor::Constructor;
 
@@ -14,7 +14,7 @@ pub struct InnerDouble {
 
 #[derive(Debug, Clone)]
 pub struct InnerMap {
-    pub value: HashMap<Pin<Box<Constructor>>, Pin<Box<Constructor>>>,
+    pub value: HashMap<Constructor, Constructor>,
 }
 
 #[derive(PartialEq, Eq, Hash, Debug, Clone)]
@@ -46,11 +46,11 @@ pub enum Primitive {
 
     // Compound
     EmptyList,
-    List(Vec<Pin<Box<Constructor>>>),
+    List(Vec<Constructor>),
     Map(InnerMap),
 
     // Arrays
-    Array(Vec<Pin<Box<Constructor>>>),
+    Array(Vec<Constructor>),
 }
 
 impl PartialEq for InnerFloat {

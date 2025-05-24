@@ -13,10 +13,7 @@ pub async fn process_frames(
 ) {
     while let Some(frame) = frame_bus_rx.recv().await {
         // Bytes 6 and 7 of an AMQP Frame contain the Channel number (see section 2.1 Transport).
-        let channel_id = u16::from_be_bytes(frame.type_specific);
-
-        // TODO: match on frame type, parse the frame body and create/update/delete the necessary
-        // Connection, Sessions and Links as per the frame type and body (see 2.4-2.7).
+        let channel_number = u16::from_be_bytes(frame.type_specific);
 
         // The frame body is defined as a performative followed by an opaque payload.
         // The performative MUST be one of those defined in section 2.7 Performatives
@@ -27,7 +24,25 @@ pub async fn process_frames(
         let mut perf_body = frame.frame_body.as_slice();
         match get_performative_and_payload(&mut perf_body).await {
             Ok((performative, payload)) => {
-                todo!();
+                // TODO: match on frame type, parse the frame body and create/update/delete the necessary
+                // Connection, Sessions and Links as per the frame type and body (see 2.4-2.7).
+                // - needs a separate function likely
+                match performative {
+                    Performative::Open {
+                        container_id,
+                        hostname,
+                        max_frame_size,
+                        channel_max,
+                        idle_time_out,
+                        outgoing_locales,
+                        incoming_locales,
+                        offered_capabilities,
+                        desired_capabilities,
+                        properties,
+                    } => {
+                        dbg!(container_id, hostname);
+                    }
+                }
             }
             Err(_) => {
                 println!("Could not read performative or payload");
@@ -40,13 +55,8 @@ pub async fn process_frames(
 async fn get_performative_and_payload(
     buf_reader: &mut (impl AsyncReadExt + Unpin),
 ) -> Result<(Performative, Vec<u8>), &'static str> {
-    let performative = Performative::new(buf_reader).await;
-    match performative {
-        Ok(performative) => {
-            let mut payload = vec![];
-            buf_reader.read_to_end(&mut payload);
-            Ok((performative, payload))
-        }
-        Err(_) => Err("Could not read performative"),
-    }
+    let performative = Performative::new(buf_reader).await?;
+    let mut payload = vec![];
+    buf_reader.read_to_end(&mut payload);
+    Ok((performative, payload))
 }

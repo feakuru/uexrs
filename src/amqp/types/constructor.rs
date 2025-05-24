@@ -331,7 +331,7 @@ async fn read_primitive(
                     .unwrap_or_else(|_| 0);
                 let elt_fcode = FormatCode::try_from(u16::from_be_bytes(read_buf))?;
                 let elt = Box::pin(Constructor::new(elt_fcode, buf_reader)).await?;
-                buf.push(Box::pin(elt));
+                buf.push(elt);
             }
             Ok(Primitive::List(buf))
         }
@@ -353,7 +353,7 @@ async fn read_primitive(
                     .await
                     .unwrap_or_else(|_| 0);
                 let elt_fcode = FormatCode::try_from(u16::from_be_bytes(read_buf))?;
-                let elt = Box::pin(Constructor::new(elt_fcode, buf_reader).await?);
+                let elt = Box::pin(Constructor::new(elt_fcode, buf_reader)).await?;
                 buf.push(elt);
             }
             Ok(Primitive::List(buf))
@@ -376,14 +376,14 @@ async fn read_primitive(
                     .await
                     .unwrap_or_else(|_| 0);
                 let key_fcode = FormatCode::try_from(u16::from_be_bytes(read_buf))?;
-                let key = Box::pin(Constructor::new(key_fcode, buf_reader).await?);
+                let key = Box::pin(Constructor::new(key_fcode, buf_reader)).await?;
 
                 buf_reader
                     .read_exact(&mut read_buf)
                     .await
                     .unwrap_or_else(|_| 0);
                 let val_fcode = FormatCode::try_from(u16::from_be_bytes(read_buf))?;
-                let val = Box::pin(Constructor::new(val_fcode, buf_reader).await?);
+                let val = Box::pin(Constructor::new(val_fcode, buf_reader)).await?;
                 buf.insert(key, val);
             }
             Ok(Primitive::Map(InnerMap { value: buf }))
@@ -403,14 +403,14 @@ async fn read_primitive(
                     .await
                     .unwrap_or_else(|_| 0);
                 let key_fcode = FormatCode::try_from(u16::from_be_bytes(read_buf))?;
-                let key = Box::pin(Constructor::new(key_fcode, buf_reader).await?);
+                let key = Box::pin(Constructor::new(key_fcode, buf_reader)).await?;
 
                 buf_reader
                     .read_exact(&mut read_buf)
                     .await
                     .unwrap_or_else(|_| 0);
                 let val_fcode = FormatCode::try_from(u16::from_be_bytes(read_buf))?;
-                let val = Box::pin(Constructor::new(val_fcode, buf_reader).await?);
+                let val = Box::pin(Constructor::new(val_fcode, buf_reader)).await?;
                 buf.insert(key, val);
             }
             Ok(Primitive::Map(InnerMap { value: buf }))
@@ -433,17 +433,17 @@ async fn read_primitive(
             let len = count as usize;
 
             let mut buf = Vec::with_capacity(len);
-            let first_elt = Box::pin(Constructor::new(elt_constructor_code, buf_reader).await?);
+            let first_elt = Box::pin(Constructor::new(elt_constructor_code, buf_reader)).await?;
             for _ in 0..len {
-                let next_elt = match *first_elt {
-                    Constructor::PrimitiveType(_) => Box::pin(Constructor::PrimitiveType(
+                let next_elt = match first_elt {
+                    Constructor::PrimitiveType(_) => Constructor::PrimitiveType(
                         Box::pin(read_primitive(buf_reader, elt_constructor_code)).await?,
-                    )),
+                    ),
                     Constructor::DescribedType(ref descriptor, _) => {
-                        Box::pin(Constructor::DescribedType(
+                        Constructor::DescribedType(
                             descriptor.clone(),
                             Box::pin(read_primitive(buf_reader, elt_constructor_code)).await?,
-                        ))
+                        )
                     }
                 };
                 buf.push(next_elt);
@@ -470,14 +470,14 @@ async fn read_primitive(
             let first_elt = Box::pin(Constructor::new(elt_constructor_code, buf_reader).await?);
             for _ in 0..len {
                 let next_elt = match *first_elt {
-                    Constructor::PrimitiveType(_) => Box::pin(Constructor::PrimitiveType(
+                    Constructor::PrimitiveType(_) => Constructor::PrimitiveType(
                         Box::pin(read_primitive(buf_reader, elt_constructor_code)).await?,
-                    )),
+                    ),
                     Constructor::DescribedType(ref descriptor, _) => {
-                        Box::pin(Constructor::DescribedType(
+                        Constructor::DescribedType(
                             descriptor.clone(),
                             Box::pin(read_primitive(buf_reader, elt_constructor_code)).await?,
-                        ))
+                        )
                     }
                 };
                 buf.push(next_elt);
