@@ -50,7 +50,7 @@ pub enum Primitive {
     Map(InnerMap),
 
     // Arrays
-    Array(Vec<Primitive>),
+    Array(Vec<Pin<Box<Constructor>>>),
 }
 
 impl PartialEq for InnerFloat {
